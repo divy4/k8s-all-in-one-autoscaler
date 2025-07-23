@@ -1,0 +1,18 @@
+{
+  "connections_prometheus_url": "http://k8s.az1.danivy.com:8080/prometheus",
+  "data_cpu_usage_percentiles": [
+    25,
+    75,
+    100
+  ],
+  "data_memory_usage_percentiles":[
+    25,
+    75,
+    100
+  ],
+  "query_range_days": 8,
+  "query_step_seconds": 120,
+  "suggestion_cpu_request_target_percentage": 100,
+  "suggestion_memory_request_target_percentage": 100,
+  "suggestion_significant_digits": 2
+}

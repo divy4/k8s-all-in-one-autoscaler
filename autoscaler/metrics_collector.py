@@ -2,6 +2,7 @@ from typing import Any, Dict, Iterable, List, Tuple, TypeAlias
 
 import collections
 import logging
+import numpy
 import re
 import requests
 import time
@@ -20,18 +21,47 @@ class MetricsCollector:
     __BY_CONTAINER = "by(namespace, pod, container)"
     __FILTER = '{namespace!="", pod!="", container!=""}'
 
-    def __init__(
-        self,
-        prometheus_url: str,  # The prometheus URL to collect metrics from.
-        query_range_seconds: int,  # The timeframe, in seconds, every query should collect data from.
-        query_step_seconds: int,  # The distance between each measurement in every query.
-    ):
-        self.__logger = logging.getLogger("MetricsCollector")
-        self.__prometheus_url = prometheus_url
-        self.__query_range_seconds = query_range_seconds
-        self.__query_step_seconds = query_step_seconds
+    def __init__(self, config: util.Config):
+        self.__logger = logging.getLogger(type(self).__name__)
+        self.__config = config
 
-    # Typed queries
+    # Aggregated metrics
+
+    def get_all_container_metrics(self) -> Dict[util.Container, Dict[str, Any]]:
+        """Collects all container metrics and returns it as a dict."""
+        data = collections.defaultdict(dict)
+
+        # CPU throttling
+        for container, values in self.get_cpu_throttle_time().items():
+            data[container]["cpu_throttle_time"] = max(values)
+
+        # CPU usage
+        for container, values in self.get_cpu_usage().items():
+            # Ensure dict exists
+            data[container]["cpu_usage"] = {}
+            # Compute all percentiles
+            percentiles = self.__config.data_cpu_usage_percentiles
+            values = numpy.percentile(values, percentiles)
+            for percentile, value in zip(percentiles, values):
+                data[container]["cpu_usage"][f"{percentile}th%"] = value
+
+        # Memory usage
+        for container, values in self.get_memory_usage().items():
+            # Ensure dict exists
+            data[container]["memory_usage"] = {}
+            # Compute all percentiles
+            percentiles = self.__config.data_memory_usage_percentiles
+            values = numpy.percentile(values, percentiles)
+            for percentile, value in zip(percentiles, values):
+                data[container]["memory_usage"][f"{percentile}th%"] = value
+
+        # Out of memory kills
+        for container, values in self.get_out_of_memory_kills().items():
+            data[container]["out_of_memory_kills"] = max(values)
+
+        return data
+
+    # Numeric metrics
 
     def get_cpu_throttle_time(self) -> ContainerMetrics:
         """Returns the CPU throttle time metrics of all containers."""
@@ -80,7 +110,8 @@ class MetricsCollector:
         query = self.__normalize_query(query)
         self.__logger.info(f"Sending query to prometheus: {query}")
         response = requests.get(
-            f"{self.__prometheus_url}/api/v1/query", params={"query": query}
+            f"{self.__config.connections_prometheus_url}/api/v1/query",
+            params={"query": query},
         )
         response.raise_for_status()
         return response.json()
@@ -94,12 +125,12 @@ class MetricsCollector:
         self.__logger.debug(f"Sending query to prometheus: {query}")
         now = int(time.time())
         response = requests.get(
-            f"{self.__prometheus_url}/api/v1/query_range",
+            f"{self.__config.connections_prometheus_url}/api/v1/query_range",
             params={
                 "query": query,
-                "start": now - self.__query_range_seconds,
+                "start": now - self.__config.query_range_seconds,
                 "end": now,
-                "step": self.__query_step_seconds,
+                "step": self.__config.query_step_seconds,
             },
         )
         response.raise_for_status()
