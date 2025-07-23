@@ -21,8 +21,7 @@ class Config:
             config = json.load(file)
 
         self.connections_prometheus_url = config["connections_prometheus_url"]
-        self.data_cpu_usage_percentiles = config["data_cpu_usage_percentiles"]
-        self.data_memory_usage_percentiles = config["data_memory_usage_percentiles"]
+        self.metrics = config["metrics"]
         self.query_range_seconds = config["query_range_days"] * 86400
         self.query_step_seconds = config["query_step_seconds"]
         self.suggestion_cpu_request_target_percentage = config[

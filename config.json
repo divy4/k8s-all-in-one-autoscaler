@@ -1,15 +1,23 @@
 {
   "connections_prometheus_url": "http://k8s.az1.danivy.com:8080/prometheus",
-  "data_cpu_usage_percentiles": [
-    25,
-    75,
-    100
-  ],
-  "data_memory_usage_percentiles":[
-    25,
-    75,
-    100
-  ],
+  "metrics": {
+    "cpu_throttle_time": [
+      "max"
+    ],
+    "cpu_usage": [
+      "25th%",
+      "75th%",
+      "max"
+    ],
+    "memory_usage": [
+      "25th%",
+      "75th%",
+      "max"
+    ],
+    "out_of_memory_kills": [
+      "max"
+    ]
+  },
   "query_range_days": 8,
   "query_step_seconds": 120,
   "suggestion_cpu_request_target_percentage": 100,

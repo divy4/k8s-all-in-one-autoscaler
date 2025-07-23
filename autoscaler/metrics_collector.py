@@ -29,36 +29,31 @@ class MetricsCollector:
 
     def get_all_container_metrics(self) -> Dict[util.Container, Dict[str, Any]]:
         """Collects all container metrics and returns it as a dict."""
-        data = collections.defaultdict(dict)
+        data = collections.defaultdict(lambda: collections.defaultdict(dict))
 
-        # CPU throttling
-        for container, values in self.get_cpu_throttle_time().items():
-            data[container]["cpu_throttle_time"] = max(values)
+        for metrics_key, metrics_types in self.__config.metrics.items():
+            # Figure out what we should collect
+            percentiles = {
+                x: int(x.removesuffix("th%"))
+                for x in metrics_types
+                if x.endswith("th%")
+            }
+            if "max" in metrics_types and "100th%" not in percentiles:
+                percentiles["100th%"] = 100
 
-        # CPU usage
-        for container, values in self.get_cpu_usage().items():
-            # Ensure dict exists
-            data[container]["cpu_usage"] = {}
-            # Compute all percentiles
-            percentiles = self.__config.data_cpu_usage_percentiles
-            values = numpy.percentile(values, percentiles)
-            for percentile, value in zip(percentiles, values):
-                data[container]["cpu_usage"][f"{percentile}th%"] = value
+            # Get the real data
+            raw_metrics = getattr(self, f"get_{metrics_key}")()
 
-        # Memory usage
-        for container, values in self.get_memory_usage().items():
-            # Ensure dict exists
-            data[container]["memory_usage"] = {}
-            # Compute all percentiles
-            percentiles = self.__config.data_memory_usage_percentiles
-            values = numpy.percentile(values, percentiles)
-            for percentile, value in zip(percentiles, values):
-                data[container]["memory_usage"][f"{percentile}th%"] = value
-
-        # Out of memory kills
-        for container, values in self.get_out_of_memory_kills().items():
-            data[container]["out_of_memory_kills"] = max(values)
-
+            # Compute percentiles
+            for container, values in raw_metrics.items():
+                values = numpy.percentile(values, tuple(percentiles.values()))
+                for percentile_key, value in zip(percentiles.keys(), values):
+                    container = str(container)
+                    data[container][metrics_key][percentile_key] = value
+                    if percentile_key == "0th%":
+                        data[container][metrics_key]["min"] = value
+                    if percentile_key == "100th%":
+                        data[container][metrics_key]["max"] = value
         return data
 
     # Numeric metrics
