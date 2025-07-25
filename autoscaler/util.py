@@ -57,6 +57,16 @@ class SortableDTO:
         return self.tuple < other.tuple
 
 
+class K8sObject(SortableDTO):
+    """A DTO that uniquely identifies a generic K8s object."""
+
+    def __init__(self, kind: str, namespace: str, name: str):
+        super(K8sObject, self).__init__((kind, namespace, name))
+        self.kind = kind
+        self.namespace = namespace
+        self.name = name
+
+
 class Container(SortableDTO):
     """A DTO that uniquely identifies a container."""
 

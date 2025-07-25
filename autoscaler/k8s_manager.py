@@ -1,8 +1,29 @@
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
+import collections
 import kubernetes
+import json
+
 
 import autoscaler.util as util
+
+kubernetes.config.load_kube_config()
+
+SUPPORTED_CONTROLLER_TYPES = {
+    "DaemonSet",
+    "Deployment",
+    "StatefulSet",
+}
+
+SUPPORTED_PARENT_TYPES = {
+    "CronJob",
+    "DaemonSet",
+    "Deployment",
+    "Job",
+    "Pod",
+    "ReplicaSet",
+    "StatefulSet",
+}
 
 
 class K8sManager:
@@ -10,6 +31,76 @@ class K8sManager:
 
     def __init__(self, config: util.Config):
         self.__config = config
+        self.__v1 = kubernetes.client.CoreV1Api()
+        self.__apps_v1 = kubernetes.client.AppsV1Api()
+        self.__batch_v1 = kubernetes.client.BatchV1Api()
+
+    # Resources
+
+    def get_container_resources(
+        self,
+    ) -> Dict[util.K8sObject, Dict[util.Container, Dict | None]]:
+        """Returns the resources of every container in the cluster."""
+        item_functions = {
+            "Pod": self.__v1.list_pod_for_all_namespaces,
+            "ReplicaSet": self.__apps_v1.list_replica_set_for_all_namespaces,
+            "Job": self.__batch_v1.list_job_for_all_namespaces,
+        }
+
+        direct_owners = {}
+        direct_resources = {}
+
+        # Build map of direct owners of resources
+        for resource_kind, item_function in item_functions.items():
+            for resource in item_function().items:
+                # Ignore resources without owners and unsupported owner resources
+                if (
+                    resource.metadata.owner_references is None
+                    or len(resource.metadata.owner_references) != 1
+                ):
+                    continue
+                owner = resource.metadata.owner_references[0]
+                if owner.kind not in SUPPORTED_PARENT_TYPES:
+                    continue
+
+                # Note what owns this resource
+                resource_dto = util.K8sObject(
+                    resource_kind, resource.metadata.namespace, resource.metadata.name
+                )
+                owner_dto = util.K8sObject(
+                    owner.kind, resource.metadata.namespace, owner.name
+                )
+                direct_owners[resource_dto] = owner_dto
+
+                # Note the owner and resources of each container
+                if resource_kind == "Pod":
+                    for container in resource.spec.containers:
+                        container_dto = util.Container(
+                            resource.metadata.namespace,
+                            resource.metadata.name,
+                            container.name,
+                        )
+                        direct_owners[container_dto] = resource_dto
+                        direct_resources[container_dto] = container.resources
+
+        resources = collections.defaultdict(dict)
+
+        # Build map of containers to the top-level resource that controls them
+        # Using tuple() to allow editing the dict during the loop
+        for container in direct_resources.keys():
+            # Follow direct owner up to controlling resource
+            controller = container
+            while controller in direct_owners:
+                controller = direct_owners[controller]
+
+            # Ignore this container if we don't support its controller
+            if controller.kind not in SUPPORTED_CONTROLLER_TYPES:
+                continue
+
+            # Note what resources are set for the container
+            resources[controller][container] = direct_resources[container]
+
+        return resources
 
     # Resource conversion
 

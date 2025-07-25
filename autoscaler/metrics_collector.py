@@ -48,7 +48,6 @@ class MetricsCollector:
             for container, values in raw_metrics.items():
                 values = numpy.percentile(values, tuple(percentiles.values()))
                 for percentile_key, value in zip(percentiles.keys(), values):
-                    container = str(container)
                     data[container][metrics_key][percentile_key] = value
                     if percentile_key == "0th%":
                         data[container][metrics_key]["min"] = value
