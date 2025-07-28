@@ -39,7 +39,7 @@ class K8sManager:
 
     def get_container_resources(
         self,
-    ) -> Dict[util.K8sObject, Dict[util.Container, Dict | None]]:
+    ) -> Dict[util.ContainerSpecLocation, Dict[util.Container, Dict | None]]:
         """Returns the resources of every container in the cluster."""
         item_functions = {
             "Pod": self.__v1.list_pod_for_all_namespaces,
@@ -97,8 +97,13 @@ class K8sManager:
             if controller.kind not in SUPPORTED_CONTROLLER_TYPES:
                 continue
 
+            # Set container spec location
+            spec_location = util.ContainerSpecLocation.from_parent(
+                controller, container
+            )
+
             # Note what resources are set for the container
-            resources[controller][container] = direct_resources[container]
+            resources[spec_location][container] = direct_resources[container]
 
         return resources
 
@@ -107,27 +112,33 @@ class K8sManager:
     def humanize_resources(
         self,
         resources: Dict[str, Dict[str, int | float]],  # The resources block of a pod.
-    ) -> Dict[util.Container, Any]:
+    ) -> Dict[str, Dict[str, int | float | str]]:
         """Reformats resources into Kubernetes human-readable values, e.g. 10Mi,
         123m, 1.7Gi."""
+        humanized = {}
+
         if "requests" in resources:
+            humanized["requests"] = {}
             if "cpu" in resources["requests"]:
-                resources["requests"]["cpu"] = self.humanize_cpu(
+                humanized["requests"]["cpu"] = self.humanize_cpu(
                     resources["requests"]["cpu"]
                 )
             if "memory" in resources["requests"]:
-                resources["requests"]["memory"] = self.humanize_memory(
+                humanized["requests"]["memory"] = self.humanize_memory(
                     resources["requests"]["memory"]
                 )
         if "limits" in resources:
+            humanized["limits"] = {}
             if "cpu" in resources["requests"]:
-                resources["requests"]["cpu"] = self.humanize_cpu(
+                humanized["requests"]["cpu"] = self.humanize_cpu(
                     resources["requests"]["cpu"]
                 )
             if "memory" in resources["limits"]:
-                resources["limits"]["memory"] = self.humanize_memory(
+                humanized["limits"]["memory"] = self.humanize_memory(
                     resources["limits"]["memory"]
                 )
+
+        return humanized
 
     def humanize_cpu(self, x: float) -> str:
         """Reformats a raw cpu value to a human-readable K8s value, e.g. 123m."""

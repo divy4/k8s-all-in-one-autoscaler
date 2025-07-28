@@ -1,6 +1,7 @@
 from typing import Any, Dict, Iterable, List, Tuple, TypeAlias
 
 import collections
+import json
 import logging
 import numpy
 import re
@@ -27,7 +28,7 @@ class MetricsCollector:
 
     # Aggregated metrics
 
-    def get_all_container_metrics(self) -> Dict[util.Container, Dict[str, Any]]:
+    def get_all_container_metrics(self) -> Dict[util.Container, Dict[str, float]]:
         """Collects all container metrics and returns it as a dict."""
         data = collections.defaultdict(lambda: collections.defaultdict(dict))
 
@@ -55,17 +56,7 @@ class MetricsCollector:
                         data[container][metrics_key]["max"] = value
         return data
 
-    # Numeric metrics
-
-    def get_cpu_throttle_time(self) -> ContainerMetrics:
-        """Returns the CPU throttle time metrics of all containers."""
-        self.__logger.info("Fetching container cpu throttle time metrics...")
-        results = self.query_range(
-            f"""max {self.__BY_CONTAINER} (
-                    irate(container_cpu_cfs_throttled_seconds_total{self.__FILTER}[5m])
-                )"""
-        )
-        return self.__reduce_time_series_data(results, "cpu throttle time")
+    # Usage metrics
 
     def get_cpu_usage(self) -> ContainerMetrics:
         """Returns the CPU usage of all containers."""
@@ -86,6 +77,18 @@ class MetricsCollector:
                 )"""
         )
         return self.__reduce_time_series_data(results, "memory usage")
+
+    # Error metrics
+
+    def get_cpu_throttle_time(self) -> ContainerMetrics:
+        """Returns the CPU throttle time metrics of all containers."""
+        self.__logger.info("Fetching container cpu throttle time metrics...")
+        results = self.query_range(
+            f"""max {self.__BY_CONTAINER} (
+                    irate(container_cpu_cfs_throttled_seconds_total{self.__FILTER}[5m])
+                )"""
+        )
+        return self.__reduce_time_series_data(results, "cpu throttle time")
 
     def get_out_of_memory_kills(self) -> ContainerMetrics:
         """Returns the number of out of memory errors of all containers."""

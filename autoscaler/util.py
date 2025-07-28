@@ -77,6 +77,25 @@ class Container(SortableDTO):
         self.container = container
 
 
+class ContainerSpecLocation(SortableDTO):
+    """A DTO that uniquely identifies the location of a container spec."""
+
+    def __init__(self, kind: str, namespace: str, name: str, container: str):
+        super(ContainerSpecLocation, self).__init__((kind, namespace, name, container))
+        self.kind = kind
+        self.namespace = namespace
+        self.name = name
+        self.container = container
+
+    def from_parent(parent_object: K8sObject, container: Container):
+        return ContainerSpecLocation(
+            parent_object.kind,
+            parent_object.namespace,
+            parent_object.name,
+            container.container,
+        )
+
+
 # Math
 
 
