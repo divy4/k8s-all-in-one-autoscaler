@@ -4,6 +4,7 @@ import collections
 import json
 import logging
 import numpy
+import tabulate
 
 import autoscaler.k8s_manager as k8s_manager
 import autoscaler.metrics_collector as metrics_collector
@@ -25,31 +26,63 @@ def autoscale_resources() -> None:
     resources = manager.get_container_resources()
     metrics = collector.get_all_container_metrics()
     # Suggest resources
-    suggestions = suggest_all_resources(resources, metrics)
-    for location, suggestion in suggestions.items():
-        suggestion = manager.humanize_resources(suggestion)
-        print(f"\n{location}:\n{json.dumps(suggestion)}")
+    suggestions = suggest_all_resources(manager, resources, metrics)
 
 
 def suggest_all_resources(
+    manager: k8s_manager.K8sManager,  # The K8sManager object.
     resources: Dict[
         util.ContainerSpecLocation, Dict[util.Container, Dict | None]
     ],  # All container resources, grouped by their controller.
     metrics: Dict[util.Container, Dict[str, float]],  # All container metrics.
-) -> None:
+) -> Dict[util.ContainerSpecLocation, Dict[str, Dict[str, int | float | str]]]:
     """Suggests resources for containers."""
     logger.info("Generating resource suggestions...")
 
+    spec_suggestions = {}
+    if logger.parent.level <= logging.DEBUG:
+        debug_table_data = []
+
     # Generate suggestions for each container spec
-    suggestions = {}
-    for spec_location, container_resources in resources.items():
-        container_metrics = {
-            container: metrics[container] for container in container_resources
-        }
-        suggestions[spec_location] = suggest_resources(
-            spec_location, container_resources, container_metrics
+    for spec, resources in resources.items():
+        # Get metrics for containers specific to this spec
+        container_metrics = {container: metrics[container] for container in resources}
+        # Generate suggestions for each container and the spec itself
+        container_suggestions = suggest_resources(spec, resources, container_metrics)
+        # Log the metrics for each container
+        if logger.parent.level <= logging.DEBUG:
+            for container, suggestion in container_suggestions.items():
+                if container is None:
+                    continue
+                debug_table_data.append(
+                    (
+                        container.namespace,
+                        container.pod,
+                        container.container,
+                        manager.humanize_resources(suggestion),
+                    )
+                )
+        # Set the suggestion for the spec
+        spec_suggestions[spec] = manager.humanize_resources(container_suggestions[None])
+
+    # Print the results of every pod's container
+    if logger.parent.level <= logging.DEBUG:
+        table = tabulate.tabulate(
+            sorted(debug_table_data),
+            headers=("Namespace", "Pod", "Container", "Suggestion"),
         )
-    return suggestions
+        logger.debug(f"Specific container suggestions:\n{table}")
+
+    # Print the results of the specs
+    table = tabulate.tabulate(
+        sorted(
+            (spec.namespace, f"{spec.kind}/{spec.name}", spec.container, suggestion)
+            for spec, suggestion in spec_suggestions.items()
+        ),
+        headers=("Namespace", "Object", "Container", "Suggestion"),
+    )
+    logger.info(f"Object suggestions:\n{table}")
+    return spec_suggestions
 
 
 def suggest_resources(
@@ -58,31 +91,29 @@ def suggest_resources(
         util.Container, Dict | None
     ],  # The resources of each container.
     container_metrics: Dict[util.Container, Any],  # The metrics of each container
-) -> Dict[util.Container, Any]:
-    """Suggests resources for containers."""
-    suggestion = collections.defaultdict(lambda: collections.defaultdict(lambda: 0))
-
+) -> Dict[util.Container | None, Dict[str, int | float | str]]:
+    """Suggests resources for containers in a location + for the container spec
+    in general."""
+    suggestions = collections.defaultdict(
+        lambda: collections.defaultdict(lambda: collections.defaultdict(lambda: 0))
+    )
     for container, resources in container_resources.items():
         metrics = container_metrics[container]
-
-        # CPU requests
+        # CPU request
         if "cpu_usage" in metrics:
-            suggestion["requests"]["cpu"] = max(
-                suggestion["requests"]["cpu"],
-                numpy.average(
-                    (metrics["cpu_usage"]["25th%"], metrics["cpu_usage"]["75th%"])
-                ),
+            suggestions[container]["requests"]["cpu"] = numpy.average(
+                (metrics["cpu_usage"]["25th%"], metrics["cpu_usage"]["75th%"])
             )
-        # Memory requests
+        # Memory request
         if "memory_usage" in metrics:
-            suggestion["requests"]["memory"] = max(
-                suggestion["requests"]["memory"],
-                numpy.average(
-                    (metrics["memory_usage"]["25th%"], metrics["memory_usage"]["75th%"])
-                ),
+            suggestions[container]["requests"]["memory"] = numpy.average(
+                (metrics["memory_usage"]["25th%"], metrics["memory_usage"]["75th%"])
             )
 
-    return suggestion
+    # Suggest the maximum of each individual container's suggestion
+    suggestions[None] = util.dict_max(*suggestions.values())
+
+    return suggestions
 
 
 if __name__ == "__main__":

@@ -83,7 +83,7 @@ class K8sManager:
                         direct_owners[container_dto] = resource_dto
                         direct_resources[container_dto] = container.resources
 
-        resources = collections.defaultdict(dict)
+        resources = {}
 
         # Build map of containers to the top-level resource that controls them
         # Using tuple() to allow editing the dict during the loop
@@ -103,6 +103,8 @@ class K8sManager:
             )
 
             # Note what resources are set for the container
+            if spec_location not in resources:
+                resources[spec_location] = {}
             resources[spec_location][container] = direct_resources[container]
 
         return resources

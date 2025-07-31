@@ -13,7 +13,7 @@ import autoscaler.util as util
 EpochTime: TypeAlias = int
 ContainerMetrics: TypeAlias = Dict[util.Container, Iterable[float]]
 
-NEWLINE_WITH_WHITESPACE = re.compile("\s*\n\s*")
+NEWLINE_WITH_WHITESPACE = re.compile(r"\s*\n\s*")
 
 
 class MetricsCollector:
@@ -30,7 +30,7 @@ class MetricsCollector:
 
     def get_all_container_metrics(self) -> Dict[util.Container, Dict[str, float]]:
         """Collects all container metrics and returns it as a dict."""
-        data = collections.defaultdict(lambda: collections.defaultdict(dict))
+        data = {}  # collections.defaultdict(lambda: collections.defaultdict(dict))
 
         for metrics_key, metrics_types in self.__config.metrics.items():
             # Figure out what we should collect
@@ -47,6 +47,10 @@ class MetricsCollector:
 
             # Compute percentiles
             for container, values in raw_metrics.items():
+                if container not in data:
+                    data[container] = {}
+                if metrics_key not in data[container]:
+                    data[container][metrics_key] = {}
                 values = numpy.percentile(values, tuple(percentiles.values()))
                 for percentile_key, value in zip(percentiles.keys(), values):
                     data[container][metrics_key][percentile_key] = value
@@ -74,7 +78,7 @@ class MetricsCollector:
         results = self.query_range(
             f"""max {self.__BY_CONTAINER} (
                     container_memory_working_set_bytes{self.__FILTER}
-                )"""
+                ) != 0"""
         )
         return self.__reduce_time_series_data(results, "memory usage")
 

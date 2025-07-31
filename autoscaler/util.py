@@ -1,9 +1,11 @@
-from typing import Any, Hashable, Tuple
+from typing import Any, Dict, Hashable, Generator, Iterable, Set, Tuple
 
+import functools
 import json
 import logging
 import math
 import numpy
+import operator
 
 logger = logging.getLogger(__name__)
 
@@ -119,3 +121,66 @@ def advanced_ceil(x: float, sigfigs: int, decimals: int = None) -> int | float:
     if precision <= 0:
         x = int(x)
     return x
+
+
+def dict_max(*dicts: Iterable[Dict]) -> Dict:
+    """Returns the merged result of a set of dicts, but with all keys set to
+    the maximum value for each key."""
+    # Flatten each dict into a dict of paths
+    flattened_dicts = list(flatten_dict(x) for x in dicts)
+    # Compute the set of all paths in every dict
+    paths = set(path for d in flattened_dicts for path in d.keys())
+    assert_no_prefix_paths(paths)
+    # Compute the max for each path
+    result = {path: max(d[path] for d in flattened_dicts) for path in paths}
+    # Convert the final result back into a nested dict
+    return inflate_dict(result)
+
+
+def flatten_dict(d: Dict) -> Dict:
+    """Flatten a multi-layer dict into a single-layer dict with tuples for keys."""
+    result = {}
+    unexplored = list(((k,), v) for k, v in d.items())
+    while len(unexplored) > 0:
+        keys, value = unexplored.pop()
+        # If the value is also a dict...
+        if not isinstance(value, dict):
+            result[keys] = value
+            continue
+        # ...or add it's subkeys if it is a dict
+        for subkey, subvalue in value.items():
+            unexplored.append(((*keys, subkey), subvalue))
+    return result
+
+
+def inflate_dict(d: Dict[Tuple, Any]) -> Dict:
+    """The inverse of flatten_dict(), inflates a single-layer dict of tuple keys
+    back into a multi-layer dict."""
+    result = {}
+    for keys, value in d.items():
+        curr_dict = result
+        # Drill down to the dict where the value should be added
+        for key in keys[:-1]:
+            # Add missing subkeys
+            if key not in curr_dict:
+                curr_dict[key] = {}
+            curr_dict = curr_dict[key]
+        # Add the value
+        curr_dict[keys[-1]] = value
+    return result
+
+
+def assert_no_prefix_paths(paths: Set[Tuple]) -> None:
+    """Given a set of "paths" that are tuples of objects, asserts that no path
+    is a prefix of another path in the set."""
+    previous = None
+    for path in sorted(paths):
+        if previous is not None and path[: len(previous)] == previous:
+            raise ValueError(
+                "Unable to compute max of all paths in dicts."
+                " One or more dicts contain values at"
+                f" {'.'.join(str(x) for x in path)}"
+                " while one or more dicts contain values in the prefix path"
+                f" {'.'.join(str(x) for x in previous)}"
+            )
+        previous = path
